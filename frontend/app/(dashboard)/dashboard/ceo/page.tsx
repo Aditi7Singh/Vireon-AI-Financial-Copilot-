@@ -108,6 +108,9 @@ export default function CEODashboardPage() {
   const recommendations = data?.recommendations?.recommendations || [];
   const alerts = data?.alerts || [];
   const burnMultiple = data?.dashboard?.multiple?.burn_multiple || 1.85;
+  const productEntries = Object.entries(products)
+    .filter(([, value]: any) => Number(value?.total_revenue || 0) !== 0 || Number(value?.total_cost || 0) !== 0)
+    .sort((a: any, b: any) => (b[1]?.gross_margin || 0) - (a[1]?.gross_margin || 0));
 
   const totalBurn    = summary?.net_burn || 1240000;
   const cashBalance  = summary?.total_credits || 2640000;
@@ -364,7 +367,7 @@ export default function CEODashboardPage() {
         </div>
 
         {/* Product Performance */}
-        {Object.keys(products).length > 0 && (
+        {productEntries.length > 0 && (
           <div className="rounded-2xl border border-[#e4d8cb] bg-white p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-black text-[#2a231d]">Product Performance & Profitability</h2>
@@ -382,18 +385,20 @@ export default function CEODashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f3ede5]">
-                  {Object.entries(products)
-                    .sort((a: any, b: any) => (b[1]?.gross_margin || 0) - (a[1]?.gross_margin || 0))
+                  {productEntries
                     .map(([name, value]: any) => {
-                      const marginPct = value.gross_margin_pct || 0;
+                      const revenue = Number(value.total_revenue || 0);
+                      const cost = Number(value.total_cost || 0);
+                      const grossMargin = Number(value.gross_margin || revenue - cost);
+                      const marginPct = revenue > 0 ? Number(value.gross_margin_pct || 0) : 0;
                       const status = marginPct > 50 ? "Healthy" : marginPct > 30 ? "Monitor" : "Critical";
                       const statusColors = { Healthy: "text-emerald-700 bg-emerald-50 border-emerald-200", Monitor: "text-amber-700 bg-amber-50 border-amber-200", Critical: "text-red-700 bg-red-50 border-red-200" };
                       return (
                         <tr key={name} className="hover:bg-[#fdf9f4] transition-colors">
                           <td className="px-3 py-3 font-semibold capitalize">{name.replace(/_/g, " ")}</td>
-                          <td className="px-3 py-3">{fmt(value.total_revenue || 0)}</td>
-                          <td className="px-3 py-3 text-[#9a8872]">{fmt(value.total_cost || 0)}</td>
-                          <td className="px-3 py-3 font-bold">{fmt(value.gross_margin || 0)}</td>
+                          <td className="px-3 py-3">{fmt(revenue)}</td>
+                          <td className="px-3 py-3 text-[#9a8872]">{fmt(cost)}</td>
+                          <td className="px-3 py-3 font-bold">{fmt(grossMargin)}</td>
                           <td className="px-3 py-3">
                             <div className="flex items-center gap-2">
                               <div className="w-16 h-1.5 rounded-full bg-[#f0e8dc] overflow-hidden">

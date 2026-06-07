@@ -17,6 +17,16 @@ def test_close_endpoints(client, db_session):
     )
     assert response.status_code in (200, 201)
 
+    response = client.post(
+        "/agent/finance-manager/chat",
+        json={
+            "message": "Can you validate the close for March?",
+            "session_id": str(uuid.uuid4()),
+            "company_id": str(company.id),
+        }
+    )
+    assert response.status_code in (200, 201)
+
 
 def test_approvals_endpoints(client, db_session):
     """Test approvals router endpoints"""
@@ -78,13 +88,47 @@ def test_agent_finance_chat_endpoint(client, db_session):
         }
     )
     assert response.status_code in (200, 201)
-    
+
+
+def test_agent_chat_sanitizes_provider_auth_errors(client, db_session, monkeypatch):
+    """Finley should not surface raw model-provider 401 payloads to users."""
+    from api.routers import agent as agent_router
+
+    company = models.Company(name="Agent Auth Co", stage="seed", initial_cash=Decimal("100000"))
+    db_session.add(company)
+    db_session.commit()
+
+    def fake_run_cfo_query(**_kwargs):
+        return (
+            "Finley is connected to your financial data, but the AI model provider "
+            "credentials are not configured correctly."
+        )
+
+    monkeypatch.setattr(agent_router, "run_cfo_query", fake_run_cfo_query)
+
     response = client.post(
-        "/agent/finance-manager/chat",
+        "/agent/chat",
         json={
-            "message": "Can you validate the close for March?",
+            "message": "Give me a CEO briefing",
             "session_id": str(uuid.uuid4()),
             "company_id": str(company.id),
-        }
+        },
     )
-    assert response.status_code in (200, 201)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "credentials are not configured correctly" in body["response"]
+    assert "Invalid API Key" not in body["response"]
+    assert "Error code: 401" not in body["response"]
+
+
+def test_cfo_agent_detects_llm_auth_errors():
+    from agent.cfo_agent import _is_llm_auth_error, _llm_unavailable_message
+
+    raw_error = Exception("Error code: 401 - {'error': {'message': 'Invalid API Key'}}")
+
+    assert _is_llm_auth_error(raw_error)
+    message = _llm_unavailable_message()
+    assert "credentials are not configured correctly" in message
+    assert "Invalid API Key" not in message
+    assert "Error code: 401" not in message

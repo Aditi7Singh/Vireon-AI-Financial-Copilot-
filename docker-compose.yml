@@ -46,6 +46,7 @@ services:
       - USE_LOCAL_LLM=false
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - ALLOW_DEMO_WITHOUT_TOKEN=true
+      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001,http://localhost:${FRONTEND_PORT:-3000}
       - ENV=development
     env_file:
       - ./backend/.env
@@ -108,9 +109,10 @@ services:
     build:
       context: ./frontend
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - INTERNAL_API_URL=http://backend:8000
     volumes:
       - ./frontend:/app
       - /app/node_modules

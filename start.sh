@@ -13,6 +13,25 @@ ok()   { echo -e "${GREEN}[vireon]${NC} $*"; }
 warn() { echo -e "${YELLOW}[vireon]${NC} $*"; }
 err()  { echo -e "${RED}[vireon]${NC} $*"; }
 
+pick_frontend_port() {
+    if [[ -n "${FRONTEND_PORT:-}" ]]; then
+        return 0
+    fi
+
+    for port in 3000 3001 3002 3003 3004 3005 3006 3007 3008 3009 3010; do
+        if ! lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+            export FRONTEND_PORT="$port"
+            if [[ "$port" != "3000" ]]; then
+                warn "Port 3000 is busy; using http://localhost:${FRONTEND_PORT} for the frontend."
+            fi
+            return 0
+        fi
+    done
+
+    err "Ports 3000-3010 are all in use. Stop one of those processes or set FRONTEND_PORT manually."
+    exit 1
+}
+
 echo ""
 echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}${CYAN}║         Vireon — Autonomous AI CFO 🚀            ║${NC}"
@@ -44,7 +63,10 @@ ensure_docker_running() {
 
 ensure_docker_running
 
-# ── 2. Ensure backend/.env exists ─────────────────────────────────────────────
+# ── 2. Pick a frontend port ──────────────────────────────────────────────────
+pick_frontend_port
+
+# ── 3. Ensure backend/.env exists ─────────────────────────────────────────────
 if [[ ! -f "$DIR/backend/.env" ]]; then
     if [[ -f "$DIR/backend/.env.demo" ]]; then
         cp "$DIR/backend/.env.demo" "$DIR/backend/.env"
@@ -60,11 +82,27 @@ else
     ok "backend/.env found."
 fi
 
-# ── 3. Build & start all services in background ───────────────────────────────
+# ── 4. Build & start all services in background ───────────────────────────────
 log "Building and starting all services..."
-docker compose up -d --build
+if docker compose up -d --build; then
+    ok "Services built and started."
+else
+    warn "Docker build failed. This often happens when Docker Hub cannot be reached."
+    warn "Trying to start from existing local Vireon images without rebuilding..."
 
-# ── 4. Wait for backend health ────────────────────────────────────────────────
+    if docker image inspect vireon-backend vireon-worker vireon-beat vireon-frontend >/dev/null 2>&1; then
+        docker compose up -d --no-build
+        ok "Services started from existing local images."
+        warn "Skipped rebuild. If you changed dependencies or Dockerfiles, fix Docker Hub/DNS and rerun with a rebuild."
+    else
+        err "Build failed and required local Vireon images are missing."
+        echo "  Docker could not reach Docker Hub to pull base images."
+        echo "  Check internet/DNS/VPN/proxy settings, then run: docker compose build"
+        exit 1
+    fi
+fi
+
+# ── 5. Wait for backend health ────────────────────────────────────────────────
 log "Waiting for backend to be ready..."
 RETRIES=40
 until curl -sf http://localhost:8000/health/ready >/dev/null 2>&1 || [[ $RETRIES -eq 0 ]]; do
@@ -81,7 +119,7 @@ else
     ok "Backend is healthy."
 fi
 
-# ── 5. Run database migrations ────────────────────────────────────────────────
+# ── 6. Run database migrations ────────────────────────────────────────────────
 log "Running database migrations..."
 if docker compose exec -T backend alembic upgrade head 2>&1; then
     ok "Migrations applied."
@@ -89,7 +127,7 @@ else
     warn "Alembic not configured or migrations already current — skipping."
 fi
 
-# ── 6. Seed demo data (skip if data already exists) ──────────────────────────
+# ── 7. Seed demo data (skip if data already exists) ──────────────────────────
 log "Seeding demo data (Orchard Analytics Inc.)..."
 if docker compose exec -T backend python scripts/demo_full_seed.py 2>&1; then
     ok "Demo data ready."
@@ -97,19 +135,19 @@ else
     warn "Seed script encountered an issue — app will still work with bootstrapped data."
 fi
 
-# ── 7. Open browser (macOS) ───────────────────────────────────────────────────
+# ── 8. Open browser (macOS) ───────────────────────────────────────────────────
 if [[ "$(uname -s)" == "Darwin" ]]; then
     sleep 1
-    open "http://localhost:3000" 2>/dev/null || true
+    open "http://localhost:${FRONTEND_PORT}" 2>/dev/null || true
 fi
 
-# ── 8. Summary ────────────────────────────────────────────────────────────────
+# ── 9. Summary ────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}${BOLD}║           All services are running! ✅           ║${NC}"
 echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "  ${CYAN}Dashboard   :${NC}  http://localhost:3000"
+echo -e "  ${CYAN}Dashboard   :${NC}  http://localhost:${FRONTEND_PORT}"
 echo -e "  ${CYAN}API         :${NC}  http://localhost:8000"
 echo -e "  ${CYAN}API Docs    :${NC}  http://localhost:8000/api/v1/docs"
 echo -e "  ${CYAN}Mailhog     :${NC}  http://localhost:8025"

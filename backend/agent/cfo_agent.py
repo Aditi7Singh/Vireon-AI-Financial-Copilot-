@@ -266,6 +266,28 @@ def _build_financial_analysis_snapshot(user_message: str) -> tuple[str, dict]:
     snapshot = "\n".join(f"- {section}" for section in sections)
     return snapshot, analysis_payload
 
+
+def _is_llm_auth_error(error: Exception) -> bool:
+    """Detect provider credential failures without coupling to one SDK."""
+    text = str(error).lower()
+    return (
+        "401" in text
+        or "unauthorized" in text
+        or "invalid api key" in text
+        or "invalid_api_key" in text
+        or "authentication" in text
+        or "api key" in text and "invalid" in text
+    )
+
+
+def _llm_unavailable_message() -> str:
+    return (
+        "Finley is connected to your financial data, but the AI model provider credentials "
+        "are not configured correctly. Please update the active LLM API key "
+        "(GROQ_API_KEY, OPENROUTER_API_KEY, or local Ollama settings) and try again. "
+        "I did not expose the raw provider error to protect configuration details."
+    )
+
 def safety_node(state: AgentState) -> AgentState:
     """
     Guardrail check after tool execution.
@@ -441,7 +463,9 @@ def run_cfo_query(
     
     except Exception as e:
         print(f"[AGENT] Error: {e}")
-        return f"I encountered an error processing your request: {str(e)}"
+        if _is_llm_auth_error(e):
+            return _llm_unavailable_message()
+        return "I encountered an error processing your request. Please try again."
     finally:
         clear_active_company_context()
 

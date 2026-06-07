@@ -134,40 +134,40 @@ export function useFinancialData(companyId: string, month: string) {
       return initial;
     }
 
-    const [scorecard, revenue, expenses, alertsResponse] = await Promise.all([
+    const [scorecard, revenue, burnDashboard, alertsResponse] = await Promise.all([
       api.getScorecard(),
       api.getRevenue(),
-      api.getExpenses(3),
+      api.getBurnDashboard(companyId, month).catch(() => null),
       api.getAlerts(),
     ]);
 
-    const breakdown = expenses.breakdown || {};
+    const breakdown = burnDashboard?.summary?.breakdown_by_category || {};
     const alertItems = alertsResponse.alerts || [];
-    const headcountTotal = Math.max(1, alertItems.length || 0) + 10;
+    const headcountTotal = burnDashboard?.headcount?.current_headcount
+      || burnDashboard?.headcount?.total_headcount
+      || Math.max(1, alertItems.length || 0) + 10;
     const productCount = Math.max(1, Object.keys(breakdown).length || 0);
+    const netBurn = burnDashboard?.summary?.net_burn ?? scorecard.monthly_net_burn;
+    const monthlyRevenue = burnDashboard?.summary?.total_credits ?? scorecard.monthly_revenue;
 
     const dashboard = {
       summary: {
         breakdown_by_category: breakdown,
-        net_burn: scorecard.monthly_net_burn,
-        total_credits: scorecard.monthly_revenue,
-        mom_change_pct: revenue.growth_pct,
+        net_burn: netBurn,
+        total_credits: monthlyRevenue,
+        mom_change_pct: burnDashboard?.summary?.mom_change_pct ?? revenue.growth_pct,
       },
-      products: Object.fromEntries(
-        Object.entries(breakdown).map(([category, amount]) => [
-          category,
-          {
-            gross_margin_pct: scorecard.monthly_revenue > 0 ? Math.max(0, 100 - ((Number(amount) / Math.max(scorecard.monthly_revenue, 1)) * 100)) : 0,
-            amount,
-          },
-        ])
-      ),
+      products: burnDashboard?.products || {},
       headcount: {
         total_headcount: headcountTotal,
-        per_employee_cost: scorecard.monthly_gross_burn / headcountTotal,
+        per_employee_cost: burnDashboard?.headcount?.per_employee_cost
+          || (burnDashboard?.headcount?.total_committed_monthly_cost
+            ? burnDashboard.headcount.total_committed_monthly_cost / headcountTotal
+            : scorecard.monthly_gross_burn / headcountTotal),
       },
       multiple: {
-        burn_multiple: scorecard.monthly_revenue > 0 ? scorecard.monthly_net_burn / scorecard.monthly_revenue : 0,
+        burn_multiple: burnDashboard?.multiple?.burn_multiple
+          ?? (monthlyRevenue > 0 ? netBurn / monthlyRevenue : 0),
       },
       month,
       company_id: companyId,
@@ -178,7 +178,7 @@ export function useFinancialData(companyId: string, month: string) {
       recommendations: [
         {
           title: "Review burn concentration",
-          finding: `Net burn is ${scorecard.monthly_net_burn.toLocaleString()} with ${Object.keys(breakdown).length} spend categories tracked.`,
+          finding: `Net burn is ${netBurn.toLocaleString()} with ${Object.keys(breakdown).length} spend categories tracked.`,
           priority: "high",
         },
         {
@@ -188,7 +188,7 @@ export function useFinancialData(companyId: string, month: string) {
         },
         {
           title: "Improve revenue quality",
-          finding: `Monthly revenue is ${scorecard.monthly_revenue.toLocaleString()} and growth is ${revenue.growth_pct.toFixed(1)}%.`,
+          finding: `Monthly revenue is ${monthlyRevenue.toLocaleString()} and growth is ${revenue.growth_pct.toFixed(1)}%.`,
           priority: "medium",
         },
       ],

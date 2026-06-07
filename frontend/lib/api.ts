@@ -782,6 +782,41 @@ export interface CashFlowStatement {
   summary: { beginning_cash: number; net_change: number; ending_cash: number };
 }
 
+export interface BurnDashboardProduct {
+  total_revenue: number;
+  total_cost: number;
+  gross_margin: number;
+  gross_margin_pct: number;
+}
+
+export interface BurnDashboard {
+  summary: {
+    total_credits: number;
+    total_debits: number;
+    net_burn: number;
+    breakdown_by_category: Record<string, number>;
+    non_cash_depreciation?: number;
+    cash_burn?: number;
+    mom_change_pct?: number;
+  };
+  multiple: {
+    burn_multiple: number;
+    net_burn: number;
+    new_arr: number;
+    interpretation: string;
+  };
+  products: Record<string, BurnDashboardProduct>;
+  expenses: Record<string, unknown>;
+  headcount: {
+    current_headcount?: number;
+    total_headcount?: number;
+    monthly_payroll_inr?: number;
+    total_committed_monthly_cost?: number;
+    per_employee_cost?: number;
+    pending_hires?: unknown[];
+  };
+}
+
 // API Functions
 export const api = {
   // Cash & Financials
@@ -790,6 +825,8 @@ export const api = {
   getRunway: () => fetchAPI<Runway>("/runway"),
   getRevenue: () => fetchAPI<Revenue>("/revenue"),
   getScorecard: () => fetchAPI<Scorecard>("/scorecard"),
+  getBurnDashboard: (companyId: string, month: string) =>
+    fetchAPI<BurnDashboard>(`/burn/dashboard/${companyId}`, { params: { month } }),
   analyzeFinancialCashFlow: (payload: CashFlowAnalysisInput) =>
     fetchAPI<Record<string, unknown>>("/financial/analyze/cash-flow", {
       method: "POST",
